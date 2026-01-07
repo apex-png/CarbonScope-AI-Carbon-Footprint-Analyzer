@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CarbonScope </title>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(0,150,255,0.08), transparent 45%),
+    radial-gradient(circle at 70% 60%, rgba(200,0,255,0.08), transparent 50%);
+  animation: spaceDrift 90s linear infinite;
+  pointer-events:none;
+}
+
+@keyframes spaceDrift{
+  from{transform:translateY(0)}
+  to{transform:translateY(-300px)}
+}
+
+body{
+  height:100vh;
+  font-family:"Georgia",serif;
+  color:white;
+  overflow:hidden;
+  background:
+    linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.85)),
+    url("https://images-assets.nasa.gov/image/PIA12348/PIA12348~orig.jpg");
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+  background-attachment:fixed;
+}
+
+/* HERO */
+.hero{position:absolute;width:100%;height:100%}
+
+.content{
+  position:absolute;
+  left:8%;
+  top:50%;
+  transform:translateY(-50%);
+  max-width:420px;
+  z-index:5;
+  transition:1s;
+}
+
+.hero.active .content{
+  opacity:0;
+  transform:translateY(-140%);
+}
+
+.content h5{letter-spacing:2px;opacity:.7}
+.content h1{font-size:72px;letter-spacing:4px;margin:10px 0}
+.content p{font-size:14px;opacity:.75}
+
+.start-btn{
+  margin-top:25px;
+  padding:14px 36px;
+  border:none;
+  border-radius:30px;
+  background:white;
+  color:black;
+  cursor:pointer;
+}
+
+/* EARTH */
+#earth-container{
+  position:absolute;
+  right:5%;
+  top:50%;
+  width:520px;
+  height:520px;
+  transform:translateY(-50%);
+  transition:1.5s ease;
+}
+
+.hero.active #earth-container{
+  top:auto;
+  bottom:-260px;
+  right:50%;
+  transform:translateX(50%) scale(1.25);
+}
+
+/* DASHBOARD */
+.dashboard{
+  position:absolute;
+  top:0;
+  width:100%;
+  padding:30px 70px;
+  display:flex;
+  justify-content:center;
+  gap:40px;
+  transform:translateY(-120%);
+  transition:1.2s ease;
+  z-index:10;
+}
+
+.dashboard.active{transform:translateY(0)}
+
+.panel{
+  width:360px;
+  background:rgba(255,255,255,.06);
+  padding:18px;
+  border-radius:16px;
+  transition:.6s;
+}
+
+.panel.hidden{display:none}
+.panel h3{margin-bottom:8px}
+
+input,select,button,textarea{
+  width:100%;
+  padding:8px;
+  margin-top:8px;
+  border-radius:6px;
+  border:none;
+  font-size:13px;
+}
+
+textarea{
+  resize:none;
+  background:#0b0f18;
+  color:white;
+  border:1px solid rgba(255,255,255,0.2);
+}
+
+button{
+  background:#00e5ff;
+  color:black;
+  cursor:pointer;
+}
+
+.result{
+  margin-top:12px;
+  text-align:center;
+  font-weight:bold;
+}
+
+canvas{margin-top:14px}
+
+/* 🤖 AI PANEL */
+.ai-panel{
+  background:rgba(0,0,0,0.55);
+  border:1px solid rgba(255,255,255,0.15);
+}
+</style>
+</head>
+
+<body>
+
+<!-- HERO -->
+<div class="hero {% if manual_result or csv_result %}active{% endif %}" id="hero">
+  <div class="content">
+    <h1>CARBONSCOPE</h1>
+    <p>Understand how daily habits affect your carbon footprint.</p>
+    <button class="start-btn" onclick="startApp()">START</button>
+  </div>
+  <div id="earth-container"></div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="dashboard {% if manual_result or csv_result %}active{% endif %}" id="dashboard">
+
+  <!-- MANUAL -->
+  <div class="panel {% if manual_result %}hidden{% endif %}" id="manualForm">
+    <h3>Manual Input</h3>
+    <form method="POST" action="/predict_manual">
+      <input name="km" type="number" placeholder="Daily KM" required>
+      <input name="electricity" type="number" placeholder="Electricity Units / Month" required>
+
+      <select name="vehicle">
+        <option>bike</option><option>car</option><option>bus</option><option>metro</option>
+      </select>
+
+      <select name="food">
+        <option>veg</option><option>mixed</option><option>non_veg</option>
+      </select>
+
+      <select name="work">
+        <option>wfh</option><option>hybrid</option><option>office</option>
+      </select>
+
+      <button type="submit">Analyze</button>
+    </form>
+  </div>
+
+  {% if manual_result %}
+  <div class="panel">
+    <h3>Manual Result</h3>
+
+    <div class="result">
+      Total CO₂: {{ manual_result }} kg/day
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:12px">
+      <div style="flex:1;background:rgba(0,255,156,0.15);padding:10px;border-radius:10px;text-align:center">
+        <small>Monthly CO₂</small>
+        <h3>{{ monthly_co2 }} kg</h3>
+      </div>
+      <div style="flex:1;background:rgba(255,107,107,0.15);padding:10px;border-radius:10px;text-align:center">
+        <small>Yearly CO₂</small>
+        <h3>{{ yearly_co2 }} tons</h3>
+      </div>
+    </div>
+
+    <canvas id="manualChart"></canvas>
+    <canvas id="projectionChart"></canvas>
+  </div>
+  {% endif %}
+
+  <!-- CSV -->
+  <div class="panel {% if csv_result %}hidden{% endif %}" id="csvForm">
+    <h3>Upload CSV</h3>
+    <form method="POST" action="/predict_csv" enctype="multipart/form-data">
+      <input type="file" name="file" required>
+      <button type="submit">Analyze CSV</button>
+    </form>
+  </div>
+
+  {% if csv_result %}
+  <div class="panel">
+    <h3>CSV Result</h3>
+    <div class="result">Average CO₂: {{ csv_result }} kg/day</div>
+    <canvas id="csvChart"></canvas>
+  </div>
+  {% endif %}
+
+  <!-- 🤖 AI PANEL (ADDED) -->
+  {% if manual_result %}
+  <div class="panel ai-panel">
+    <h3>🤖 Carbon AI Assistant</h3>
+
+    <textarea id="aiQuestion" rows="3"
+      placeholder="Ask how to reduce your CO₂..."></textarea>
+
+    <button onclick="askAI()">Ask AI</button>
+
+    <div id="aiAnswer" style="margin-top:10px;font-size:14px;color:#dff">
+      AI insights will appear here...
+    </div>
+
+    <canvas id="aiChart"></canvas>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- AI SCRIPT (ADDED) -->
+{% if manual_result %}
+<script>
+function askAI(){
+  const q=document.getElementById("aiQuestion").value;
+  const box=document.getElementById("aiAnswer");
+
+  if(!q){
+    box.innerText="Please ask a question about carbon reduction.";
+    return;
+  }
+
+  fetch("/api/ai_insight",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      question:q,
+      total:{{ manual_result }},
+      breakdown:{{ chart_data | tojson }}
+    })
+  })
+  .then(res=>res.json())
+  .then(data=>{
+    box.innerText=data.answer;
+    new Chart(document.getElementById("aiChart"),{
+      type:"bar",
+      data:{
+        labels:Object.keys(data.reduction),
+        datasets:[{
+          data:Object.values(data.reduction),
+          backgroundColor:"#7df9ff"
+        }]
+      },
+      options:{
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:"white"}},
+          y:{ticks:{color:"white"}}
+        }
+      }
+    });
+  })
+  .catch(()=>{
+    box.innerText="AI temporarily unavailable.";
+  });
+}
+</script>
+{% endif %}
+
+<script>
+function startApp(){
+  document.getElementById("hero").classList.add("active");
+  document.getElementById("dashboard").classList.add("active");
+}
+
+/* THREE.JS EARTH */
+let scene,camera,renderer,earth;
+function initEarth(){
+  const c=document.getElementById("earth-container");
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(45,1,.1,1000);
+  camera.position.z=4;
+
+  renderer=new THREE.WebGLRenderer({alpha:true,antialias:true});
+  renderer.setSize(520,520);
+  c.appendChild(renderer.domElement);
+
+  scene.add(new THREE.DirectionalLight(0xffffff,1.2));
+  scene.add(new THREE.AmbientLight(0x404040));
+
+  earth=new THREE.Mesh(
+    new THREE.SphereGeometry(1.4,64,64),
+    new THREE.MeshStandardMaterial({
+      map:new THREE.TextureLoader().load(
+        "https://threejs.org/examples/textures/land_ocean_ice_cloud_2048.jpg"
+      )
+    })
+  );
+  scene.add(earth);
+  animate();
+}
+function animate(){
+  requestAnimationFrame(animate);
+  earth.rotation.y+=0.002;
+  renderer.render(scene,camera);
+}
+window.onload=initEarth;
+</script>
+
+{% if chart_data %}
+<script>
+new Chart(document.getElementById("manualChart"),{
+  type:"doughnut",
+  data:{
+    labels:["Transport","Electricity","Food","Work"],
+    datasets:[{
+      data:[
+        {{ chart_data.transport }},
+        {{ chart_data.electricity }},
+        {{ chart_data.food }},
+        {{ chart_data.work }}
+      ],
+      backgroundColor:["#00c8ff","#00ffb0","#ffc107","#ff6b6b"]
+    }]
+  }
+});
+</script>
+{% endif %}
+
+{% if manual_result %}
+<script>
+new Chart(document.getElementById("projectionChart"),{
+  type:"bar",
+  data:{
+    labels:["Daily","Monthly","Yearly"],
+    datasets:[{
+      data:[{{ manual_result }},{{ monthly_co2 }},{{ yearly_co2 }}],
+      backgroundColor:["#00e5ff","#00ff9c","#ff6b6b"]
+    }]
+  }
+});
+</script>
+{% endif %}
+
+{% if csv_result %}
+<script>
+new Chart(document.getElementById("csvChart"),{
+  type:"doughnut",
+  data:{
+    labels:["Average CO₂"],
+    datasets:[{
+      data:[{{ csv_result }},5],
+      backgroundColor:["#00e5ff","#1c2f44"]
+    }]
+  }
+});
+</script>
+{% endif %}
+
+</body>
+</html>
